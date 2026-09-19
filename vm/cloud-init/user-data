@@ -1,0 +1,70 @@
+#cloud-config
+hostname: ft-ping-vm
+manage_etc_hosts: true
+
+users:
+  - name: debian
+    # Matches the macOS user's UID so files on the 9p share are writable from
+    # both sides; 9p2000.L passes ownership through and cannot remap it.
+    uid: __HOST_UID__
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    ssh_authorized_keys:
+      - __SSH_PUBKEY__
+
+chpasswd:
+  list: |
+    debian:debian
+  expire: false
+
+ssh_pwauth: true
+
+package_update: true
+package_upgrade: false
+
+packages:
+  # The stock cloud kernel has no 9p modules, so the host share cannot mount.
+  # The generic kernel does; runcmd purges the cloud one and reboots into it.
+  - linux-image-arm64
+  - build-essential
+  - clang
+  - clang-tools
+  - clang-format
+  - clang-tidy
+  - gdb
+  - lldb
+  - make
+  - cmake
+  - git
+  - net-tools
+  # The subject's reference implementation is inetutils ("ping -V"). This
+  # package Conflicts with iputils-ping -- both provide /usr/bin/ping -- so
+  # installing it replaces Debian's default. Bookworm ships 2.4, not 2.0.
+  - inetutils-ping
+  - iproute2
+  - tcpdump
+  - strace
+  - valgrind
+  - man-db
+  - manpages-dev
+  - bash-completion
+  - vim
+  - less
+  - curl
+  - ca-certificates
+
+runcmd:
+  - mkdir -p /mnt/ft_ping
+  - echo 'ft_ping /mnt/ft_ping 9p trans=virtio,version=9p2000.L,rw,nofail 0 0' >> /etc/fstab
+  - DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y 'linux-image-*-cloud-*' linux-image-cloud-arm64
+  - echo "VM ready. Project shared at /mnt/ft_ping" > /etc/motd
+
+power_state:
+  mode: reboot
+  message: "Rebooting into the generic kernel to enable the 9p host share"
+  timeout: 30
+  condition: true
+
+final_message: "ft_ping Debian VM provisioned after $UPTIME seconds (rebooting once)"
