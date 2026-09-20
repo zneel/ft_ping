@@ -4,17 +4,10 @@
 # guest via virtio-9p at /mnt/ft_ping.
 set -euo pipefail
 
-VM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$VM_DIR/.." && pwd)"
-DISK_IMG="$VM_DIR/disk.qcow2"
-SEED_ISO="$VM_DIR/seed.iso"
-SSH_KEY="$VM_DIR/id_ed25519"
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
+
 QEMU_SHARE="$(dirname "$(dirname "$(command -v qemu-system-aarch64)")")/share/qemu"
 FW_CODE="$QEMU_SHARE/edk2-aarch64-code.fd"
-FW_VARS="$VM_DIR/efi-vars.fd"
-PID_FILE="$VM_DIR/vm.pid"
-CONSOLE_LOG="$VM_DIR/console.log"
-SSH_PORT="${SSH_PORT:-2222}"
 RAM="${RAM:-4G}"
 CPUS="${CPUS:-4}"
 NET="${NET:-user}"
@@ -93,10 +86,10 @@ echo -n "==> Waiting for the VM (first boot provisions, then reboots once)"
 for _ in $(seq 240); do
   if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
          -o BatchMode=yes -o ConnectTimeout=3 \
-         -p "$SSH_PORT" -i "$SSH_KEY" debian@localhost \
+         -p "$SSH_PORT" -i "$SSH_KEY" "$SSH_USER@localhost" \
          'cloud-init status 2>/dev/null | grep -q "^status: done" && ! uname -r | grep -q cloud' 2>/dev/null; then
     echo
-    echo "==> Ready.  ssh -p $SSH_PORT -i $SSH_KEY debian@localhost"
+    echo "==> Ready.  vm/ssh.sh  (ssh -p $SSH_PORT -i $SSH_KEY $SSH_USER@localhost)"
     echo "    Project shared at /mnt/ft_ping"
     exit 0
   fi

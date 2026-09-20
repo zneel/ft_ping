@@ -14,9 +14,9 @@ make vm-stop       # shut down
 ```
 
 The VM runs in the background with no console — access is SSH only
-(`ssh -p 2222 -i vm/id_ed25519 debian@localhost`, user/password `debian`). Boot
-output goes to `vm/console.log`. First `make vm` takes ~2 min (provisioning plus
-one automatic reboot); later boots are ~10s.
+(`vm/ssh.sh`, user/password `debian`). Boot output goes to `vm/console.log`.
+First `make vm` takes ~2 min (provisioning plus one automatic reboot); later
+boots are ~10s.
 
 ```sh
 cd /mnt/ft_ping && make re && sudo ./ft_ping 8.8.8.8
@@ -25,7 +25,8 @@ cd /mnt/ft_ping && make re && sudo ./ft_ping 8.8.8.8
 The project is live-shared at `/mnt/ft_ping` via 9p. Always `make re` inside the
 VM — macOS `.o` files are Mach-O and won't link there.
 
-Reset: `make vm-clean && make vm-setup`. Tuning: `RAM=8G CPUS=8 SSH_PORT=2223 vm/run.sh`.
+Reset: `make vm-clean && make vm-setup`. Tuning: `RAM=8G CPUS=8 SSH_PORT=2223 vm/run.sh`
+(`SSH_PORT` is read from [env.sh](env.sh), so `vm/ssh.sh` follows the same override).
 
 ## Gotchas
 

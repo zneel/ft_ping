@@ -30,10 +30,9 @@ vm-stop:
 	vm/stop.sh
 
 vm-ssh:
-	ssh -p 2222 -i vm/id_ed25519 debian@localhost
+	vm/ssh.sh
 
-vm-clean: vm-stop
-	rm -f vm/disk.qcow2 vm/efi-vars.fd vm/seed.iso vm/console.log
-	rm -rf vm/.cidata
+vm-clean:
+	vm/clean.sh
 
 .PHONY: all clean re fclean vm-setup vm vm-stop vm-ssh vm-clean

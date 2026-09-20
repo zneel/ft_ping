@@ -4,14 +4,10 @@
 # `make vm-clean`) before `./run.sh`.
 set -euo pipefail
 
-VM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
+
 IMG_URL="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2"
-BASE_IMG="$VM_DIR/debian-12-genericcloud-arm64.qcow2"
-DISK_IMG="$VM_DIR/disk.qcow2"
 DISK_SIZE="16G"
-SEED_ISO="$VM_DIR/seed.iso"
-SSH_KEY="$VM_DIR/id_ed25519"
-CIDATA_DIR="$VM_DIR/.cidata"
 
 echo "==> Checking prerequisites"
 command -v qemu-img >/dev/null || { echo "qemu-img not found (brew install qemu)"; exit 1; }

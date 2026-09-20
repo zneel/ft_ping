@@ -2,8 +2,7 @@
 # Shuts the ft_ping VM down cleanly (ACPI powerdown, falling back to SIGKILL).
 set -euo pipefail
 
-VM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$VM_DIR/vm.pid"
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 
 if [ ! -f "$PID_FILE" ]; then
   echo "VM is not running (no $PID_FILE)"
