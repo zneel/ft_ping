@@ -1,19 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netinet/ip_icmp.h>
-#include <poll.h>
-#include <time.h>
-#include <netdb.h>
-#include <errno.h>
-#include <sys/time.h>
-
 #include "ft_ping.h"
 
 static volatile sig_atomic_t g_running = 1;
@@ -45,24 +29,6 @@ int parse(const char *input, struct sockaddr_storage *out)
     return 1;
 }
 
-unsigned short compute_checksum(unsigned short *buf, int len)
-{
-    unsigned long sum = 0;
-    for (int i = 0; i < len / 2; i++)
-    {
-        sum += buf[i];
-    }
-    if (len % 2 == 1)
-    {
-        sum += ((unsigned char *)buf)[len - 1];
-    }
-    while (sum >> 16)
-    {
-        sum = (sum & 0xFFFF) + (sum >> 16);
-    }
-    return ~sum;
-}
-
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -85,7 +51,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    int ret = connect(sockfd, (struct sockaddr *)&dest_addr, dest_addr.ss_len);
+    int ret = connect(sockfd, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if (ret == -1)
     {
         perror("Failed to connect to destination");
@@ -95,34 +61,26 @@ int main(int argc, char *argv[])
 
     signal(SIGINT, request_stop);
 
-    int id = getpid() & 0xFFFF;
+    int id = getpid();
     int sent = 0;
     int received = 0;
+    double rtt_min = INFINITY, rtt_max = 0.0, rtt_sum = 0.0;
+    struct pollfd s_poll = {.fd = sockfd, .events = POLLIN};
     while (g_running)
     {
-        struct pollfd s_poll = {.fd = sockfd, .events = POLLIN};
-        int p = poll(&s_poll, 1, 0);
-        if (p == -1)
-        {
-            perror("Poll error");
-            close(sockfd);
-            return EXIT_FAILURE;
-        }
-
-        void *packet = malloc(64);
-        struct icmp icmp_part = (struct icmp){
-            .icmp_type = ICMP_ECHO,
-            .icmp_code = 0,
-            .icmp_cksum = 0,
-            .icmp_id = id,
-            .icmp_seq = sent,
-        };
-        icmp_part.icmp_cksum = compute_checksum((unsigned short *)&icmp_part, sizeof(icmp_part));
-        memcpy(packet, &icmp_part, sizeof(icmp_part));
         struct timeval tv;
         gettimeofday(&tv, NULL);
-        memcpy((char *)packet + sizeof(icmp_part), &tv, sizeof(tv));
-        ssize_t bytes_sent = send(sockfd, packet, sizeof(packet), 0);
+        char sbuff[64] = {0};
+        struct icmp *packet = (struct icmp *)sbuff;
+        packet->icmp_type = ICMP_ECHO;
+        packet->icmp_code = 0;
+        packet->icmp_cksum = 0;
+        packet->icmp_id = htons(id);
+        packet->icmp_seq = htons(sent);
+        memcpy(sbuff + ICMP_MINLEN, &tv, sizeof(tv));
+
+        packet->icmp_cksum = compute_checksum((unsigned short *)sbuff, sizeof(sbuff));
+        ssize_t bytes_sent = send(sockfd, sbuff, sizeof(sbuff), 0);
         if (bytes_sent == -1)
         {
             perror("Failed to send ICMP packet");
@@ -130,17 +88,35 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
         sent++;
-        if (p > 0)
+
+        struct timeval deadline;
+        gettimeofday(&deadline, NULL);
+        deadline.tv_sec += 1;
+        for (;;)
         {
+            int remaining = ms_until(&deadline);
+            if (remaining <= 0)
+                break;
+
+            int p = poll(&s_poll, 1, remaining);
+            if (p == 0)
+                break;
+            if (p == -1)
+            {
+                if (errno == EINTR) // interupted
+                    break;
+                perror("Poll error");
+                close(sockfd);
+                return EXIT_FAILURE;
+            }
             if (!(s_poll.revents & POLLIN))
             {
                 printf("Unexpected event occurred: %d\n", s_poll.revents);
                 close(sockfd);
                 return EXIT_FAILURE;
             }
-            struct icmp reply;
-            memset(&reply, 0, sizeof(reply));
-            ssize_t bytes_received = recv(sockfd, &reply, sizeof(reply), 0);
+            char buff[1024];
+            ssize_t bytes_received = recv(sockfd, buff, sizeof(buff), 0);
             if (bytes_received == -1)
             {
                 perror("Failed to receive ICMP packet");
@@ -148,26 +124,33 @@ int main(int argc, char *argv[])
                 return EXIT_FAILURE;
             }
             received++;
-            int seq = reply.icmp_seq;
-            struct timeval *sent_time = (struct timeval *)((char *)&reply + sizeof(reply));
+
+            struct ip *ip = (struct ip *)buff;
+            ssize_t ip_header_len = ip->ip_hl * 4;
+            struct icmp *icmp_reply = (struct icmp *)(buff + ip_header_len);
+            struct timeval *sent_time = (struct timeval *)(buff + ip_header_len + ICMP_MINLEN);
             struct timeval now;
             gettimeofday(&now, NULL);
-            double rtt = (now.tv_sec - sent_time->tv_sec) * 1000.0 + (now.tv_usec - sent_time->tv_usec) / 1000.0;
+            double elapsed_time = (now.tv_sec - sent_time->tv_sec) * 1000.0 + (now.tv_usec - sent_time->tv_usec) / 1000.0;
+            rtt_min = (rtt_min == INFINITY) ? elapsed_time : fmin(rtt_min, elapsed_time);
+            rtt_max = fmax(rtt_max, elapsed_time);
+            rtt_sum += elapsed_time;
             printf("%zd bytes received from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
-                   bytes_received,
+                   bytes_received - ip_header_len,
                    argv[1],
-                   seq,
-                   ((struct ip *)&reply)->ip_ttl,
-                   rtt);
+                   ntohs(icmp_reply->icmp_seq)+1,
+                   ip->ip_ttl,
+                   elapsed_time);
         }
-        sleep(1);
     }
 
-    printf("--- %s ping statistics ---\n", argv[1]);
+    printf("\n--- %s ping statistics ---\n", argv[1]);
     printf("%d packets transmitted, %d received, %.1f%% packet loss\n",
            sent,
            received,
            sent ? (double)(sent - received) / sent * 100 : 0.0);
+    printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n",
+           rtt_min, rtt_sum / received, rtt_max, sqrt((rtt_sum / received) * (rtt_sum / received) - (rtt_min * rtt_min)));
 
     close(sockfd);
     return 0;

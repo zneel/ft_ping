@@ -1,19 +1,27 @@
 CC = clang
-CFLAGS = -Wall -Wextra -Werror
+CFLAGS = -Wall -Wextra -Werror -std=c99 -g
 
-srcs = src/main.c
-objs = $(srcs:.c=.o)
+srcs = src/main.c \
+       src/checksum.c \
+       src/time.c
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+objdir = obj
+objs = $(srcs:src/%.c=$(objdir)/%.o)
+deps = $(objs:.o=.d)
+
+$(objdir)/%.o: src/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 all: ft_ping
 
+-include $(deps)
+
 ft_ping: $(objs)
-	$(CC) $(CFLAGS) $(objs) -o ft_ping
+	$(CC) $(CFLAGS) $(objs) -lm -o ft_ping
 
 clean:
-	rm -f $(objs)
+	rm -rf $(objdir)
 
 re: fclean all
 

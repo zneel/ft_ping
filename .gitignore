@@ -1,4 +1,6 @@
 *.o
+*.d
+obj/
 ft_ping
 
 vm/*.qcow2
